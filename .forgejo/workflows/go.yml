@@ -1,0 +1,22 @@
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: docker
+    container:
+      image: git.championtourney.com/championtourney/forgejo-runner:latest
+
+    steps:
+      - name: test
+        uses: https://git.championtourney.com/championtourney/go-test@v1
+
+  lint:
+    runs-on: docker
+    container:
+      image: git.championtourney.com/championtourney/forgejo-runner:latest
+
+    steps:
+      - name: lint
+        uses: https://git.championtourney.com/championtourney/go-lint@v1
