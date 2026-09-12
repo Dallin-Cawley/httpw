@@ -43,6 +43,13 @@ func TestBasicAuthCredentials_UnmarshalText(t *testing.T) {
 	})
 }
 
+func TestNewBasicAuthCredential(t *testing.T) {
+	cred := NewBasicAuthCredential("my_user", "my_password")
+	assert.NotNil(t, cred)
+	assert.Equal(t, "my_user", cred.Username)
+	assert.Equal(t, "my_password", cred.Password)
+}
+
 func TestNewBasicAuthHttpDecorator(t *testing.T) {
 	t.Run("nil credentials error", func(t *testing.T) {
 		dec, err := NewBasicAuthHttpDecorator(nil)

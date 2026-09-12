@@ -12,6 +12,13 @@ type BasicAuthCredential struct {
 	Password string `json:"password" xml:"password"`
 }
 
+func NewBasicAuthCredential(username, password string) *BasicAuthCredential {
+	return &BasicAuthCredential{
+		Username: username,
+		Password: password,
+	}
+}
+
 func NewBasicAuthCredentialFromClientCredential(credential *ClientCredential) *BasicAuthCredential {
 	return &BasicAuthCredential{
 		Username: credential.ClientID,
