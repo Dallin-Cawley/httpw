@@ -11,46 +11,35 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/suite"
+	"github.com/go-openapi/testify/v2/assert"
 )
 
-type DoTestSuite struct {
-	suite.Suite
-	ctx context.Context
-}
-
-func (testSuite *DoTestSuite) SetupTest() {
-	testSuite.ctx = context.Background()
-}
-
-func TestHttpwSuite(t *testing.T) {
-	suite.Run(t, new(DoTestSuite))
-}
-
-func (testSuite *DoTestSuite) TestNewJsonRequest_Success() {
+func TestNewJsonRequest_Success(t *testing.T) {
+	ctx := context.Background()
 	body := map[string]string{"foo": "bar"}
-	req, err := NewJsonRequest(testSuite.ctx, http.MethodPost, "http://example.com", body)
-	testSuite.NoError(err)
-	testSuite.NotNil(req)
-	testSuite.Equal(http.MethodPost, req.Method)
-	testSuite.Equal("http://example.com", req.URL.String())
+	req, err := NewJsonRequest(ctx, http.MethodPost, "http://example.com", body)
+	assert.NoError(t, err)
+	assert.NotNil(t, req)
+	assert.Equal(t, http.MethodPost, req.Method)
+	assert.Equal(t, "http://example.com", req.URL.String())
 
 	var actualBody map[string]string
 	err = json.NewDecoder(req.Body).Decode(&actualBody)
-	testSuite.NoError(err)
-	testSuite.Equal(body, actualBody)
+	assert.NoError(t, err)
+	assert.Equal(t, body, actualBody)
 }
 
-func (testSuite *DoTestSuite) TestNewJsonRequest_MarshalError() {
-	// A channel cannot be marshaled to JSON.
-	req, err := NewJsonRequest(testSuite.ctx, http.MethodPost, "http://example.com", make(chan int))
-	testSuite.Nil(req)
-	testSuite.ErrorContains(err, "failed to marshal request body")
+func TestNewJsonRequest_MarshalError(t *testing.T) {
+	ctx := context.Background()
+	req, err := NewJsonRequest(ctx, http.MethodPost, "http://example.com", make(chan int))
+	assert.Nil(t, req)
+	assert.ErrorContains(t, err, "failed to marshal request body")
 }
 
-func (testSuite *DoTestSuite) TestCloseReader_Success() {
+func TestCloseReader_Success(t *testing.T) {
+	ctx := context.Background()
 	closer := io.NopCloser(bytes.NewReader(nil))
-	CloseReader(testSuite.ctx, closer, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	CloseReader(ctx, closer, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 type errorCloser struct{}
@@ -58,17 +47,18 @@ type errorCloser struct{}
 func (e errorCloser) Read(_ []byte) (n int, err error) { return 0, io.EOF }
 func (e errorCloser) Close() error                     { return errors.New("close error") }
 
-func (testSuite *DoTestSuite) TestCloseReader_Error() {
+func TestCloseReader_Error(t *testing.T) {
+	ctx := context.Background()
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	err := errors.New("close error")
 
-	CloseReader(testSuite.ctx, errorCloser{}, logger)
-	testSuite.Contains(buf.String(), "Failed to close response body")
-	testSuite.Contains(buf.String(), err.Error())
+	CloseReader(ctx, errorCloser{}, logger)
+	assert.Contains(t, buf.String(), "Failed to close response body")
+	assert.Contains(t, buf.String(), err.Error())
 }
 
-func (testSuite *DoTestSuite) TestDo_Success() {
+func TestDo_Success(t *testing.T) {
 	expected := map[string]string{"result": "ok"}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -78,11 +68,11 @@ func (testSuite *DoTestSuite) TestDo_Success() {
 
 	req, _ := http.NewRequest(http.MethodGet, server.URL, nil)
 	result, err := Do[map[string]string](req, server.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
-	testSuite.NoError(err)
-	testSuite.Equal(expected, result)
+	assert.NoError(t, err)
+	assert.Equal(t, expected, result)
 }
 
-func (testSuite *DoTestSuite) TestDo_IgnoreBody() {
+func TestDo_IgnoreBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("raw text"))
@@ -91,25 +81,25 @@ func (testSuite *DoTestSuite) TestDo_IgnoreBody() {
 
 	req, _ := http.NewRequest(http.MethodGet, server.URL, nil)
 	_, err := Do[IgnoreBody](req, server.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
-	testSuite.NoError(err)
+	assert.NoError(t, err)
 }
 
-func (testSuite *DoTestSuite) TestDo_ClientError() {
+func TestDo_ClientError(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "http://invalid-url.invalid", nil)
 
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	_, err := Do[map[string]any](req, http.DefaultClient, logger)
-	testSuite.ErrorContains(err, "failed to execute http request")
+	assert.ErrorContains(t, err, "failed to execute http request")
 
 	output := buf.String()
-	testSuite.Contains(output, "failed to execute http request")
-	testSuite.Contains(output, "GET")
-	testSuite.Contains(output, "http://invalid-url.invalid")
+	assert.Contains(t, output, "failed to execute http request")
+	assert.Contains(t, output, "GET")
+	assert.Contains(t, output, "http://invalid-url.invalid")
 }
 
-func (testSuite *DoTestSuite) TestDo_StatusError() {
+func TestDo_StatusError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	}))
@@ -121,16 +111,16 @@ func (testSuite *DoTestSuite) TestDo_StatusError() {
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	_, err := Do[map[string]any](req, server.Client(), logger)
-	testSuite.ErrorContains(err, "http request failed with status code 400")
+	assert.ErrorContains(t, err, "http request failed with status code 400")
 
 	output := buf.String()
-	testSuite.Contains(output, "http request encountered an unexpected status code")
-	testSuite.Contains(output, "GET")
-	testSuite.Contains(output, server.URL)
-	testSuite.Contains(output, "400")
+	assert.Contains(t, output, "http request encountered an unexpected status code")
+	assert.Contains(t, output, "GET")
+	assert.Contains(t, output, server.URL)
+	assert.Contains(t, output, "400")
 }
 
-func (testSuite *DoTestSuite) TestDo_NotFound() {
+func TestDo_NotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
@@ -143,23 +133,23 @@ func (testSuite *DoTestSuite) TestDo_NotFound() {
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	_, err := Do[map[string]any](req, server.Client(), logger)
-	testSuite.Error(err)
-	testSuite.True(errors.Is(err, &NotFoundError{}))
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, &NotFoundError{}))
 
 	var notFoundError *NotFoundError
-	testSuite.True(errors.As(err, &notFoundError))
-	testSuite.Equal("path", notFoundError.Resource)
-	testSuite.Equal(reqPath, notFoundError.Source)
-	testSuite.Equal("[ path ] not found", err.Error())
+	assert.True(t, errors.As(err, &notFoundError))
+	assert.Equal(t, "path", notFoundError.Resource)
+	assert.Equal(t, reqPath, notFoundError.Source)
+	assert.Equal(t, "[ path ] not found", err.Error())
 
 	output := buf.String()
-	testSuite.Contains(output, "http request encountered an unexpected status code")
-	testSuite.Contains(output, "GET")
-	testSuite.Contains(output, server.URL+reqPath)
-	testSuite.Contains(output, "404")
+	assert.Contains(t, output, "http request encountered an unexpected status code")
+	assert.Contains(t, output, "GET")
+	assert.Contains(t, output, server.URL+reqPath)
+	assert.Contains(t, output, "404")
 }
 
-func (testSuite *DoTestSuite) TestDo_DecodeError() {
+func TestDo_DecodeError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("{invalid json}"))
@@ -172,10 +162,10 @@ func (testSuite *DoTestSuite) TestDo_DecodeError() {
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	_, err := Do[map[string]any](req, server.Client(), logger)
-	testSuite.ErrorContains(err, "failed to decode response body")
+	assert.ErrorContains(t, err, "failed to decode response body")
 
 	output := buf.String()
-	testSuite.Contains(output, "failed to decode response body")
-	testSuite.Contains(output, "GET")
-	testSuite.Contains(output, server.URL)
+	assert.Contains(t, output, "failed to decode response body")
+	assert.Contains(t, output, "GET")
+	assert.Contains(t, output, server.URL)
 }

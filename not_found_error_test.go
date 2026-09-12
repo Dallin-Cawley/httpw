@@ -4,45 +4,37 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/suite"
+	"github.com/go-openapi/testify/v2/assert"
 )
 
-type NotFoundErrorTestSuite struct {
-	suite.Suite
-}
-
-func (testSuite *NotFoundErrorTestSuite) TestError_ReturnsFormattedMessage() {
+func TestError_ReturnsFormattedMessage(t *testing.T) {
 	err := &NotFoundError{Resource: "resource X"}
-	testSuite.Equal("[ resource X ] not found", err.Error())
+	assert.Equal(t, "[ resource X ] not found", err.Error())
 }
 
-func (testSuite *NotFoundErrorTestSuite) TestNewEmptyNotFoundError_ReturnsEmptyNotFoundError() {
+func TestNewEmptyNotFoundError_ReturnsEmptyNotFoundError(t *testing.T) {
 	err := NewEmptyNotFoundError()
-	testSuite.Empty(err.Resource)
-	testSuite.Empty(err.Source)
+	assert.Empty(t, err.Resource)
+	assert.Empty(t, err.Source)
 }
 
-func (testSuite *NotFoundErrorTestSuite) TestNewNotFoundError_ReturnsPopulatedNotFoundError() {
+func TestNewNotFoundError_ReturnsPopulatedNotFoundError(t *testing.T) {
 	err := NewNotFoundError("resource X", "source Y")
-	testSuite.Equal("resource X", err.Resource)
-	testSuite.Equal("source Y", err.Source)
+	assert.Equal(t, "resource X", err.Resource)
+	assert.Equal(t, "source Y", err.Source)
 }
 
-func (testSuite *NotFoundErrorTestSuite) TestIs_CorrectlyIdentifiesNotFoundError() {
+func TestIs_CorrectlyIdentifiesNotFoundError(t *testing.T) {
 	err := NewNotFoundError("resource A", "")
 	other := NewNotFoundError("resource B", "")
 
-	testSuite.True(errors.Is(err, other))
-	testSuite.True(errors.Is(err, &NotFoundError{}))
+	assert.True(t, errors.Is(err, other))
+	assert.True(t, errors.Is(err, &NotFoundError{}))
 }
 
-func (testSuite *NotFoundErrorTestSuite) TestIs_ReturnsFalseForOtherErrors() {
+func TestIs_ReturnsFalseForOtherErrors(t *testing.T) {
 	err := NewEmptyNotFoundError()
 	other := errors.New("some other error")
 
-	testSuite.False(errors.Is(err, other))
-}
-
-func TestNotFoundErrorTestSuite(t *testing.T) {
-	suite.Run(t, new(NotFoundErrorTestSuite))
+	assert.False(t, errors.Is(err, other))
 }
