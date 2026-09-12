@@ -8,26 +8,37 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 )
+
+// CloseReadCloser closes the given io.ReadCloser and logs any errors.
+func CloseReadCloser(rc io.ReadCloser, logger *slog.Logger) {
+	if err := rc.Close(); err != nil {
+		logger.Error("failed to close read closer", "err", err)
+	}
+}
 
 type MtlsHttpDecorator struct {
 	keyPair tls.Certificate
 	caCert  *x509.Certificate
 }
 
-func NewMtlsHttpDecorator(caCert, clientCert, clientKey io.Reader) (*MtlsHttpDecorator, error) {
+func NewMtlsHttpDecorator(logger *slog.Logger, caCert, clientCert, clientKey io.ReadCloser) (*MtlsHttpDecorator, error) {
 	if caCert == nil {
 		return nil, errors.New("ca certificate reader cannot be nil for mTLS decoration")
 	}
+	defer CloseReadCloser(caCert, logger)
 
 	if clientCert == nil {
 		return nil, errors.New("client certificate reader cannot be nil for mTLS decoration")
 	}
+	defer CloseReadCloser(clientCert, logger)
 
 	if clientKey == nil {
 		return nil, errors.New("client key reader cannot be nil for mTLS decoration")
 	}
+	defer CloseReadCloser(clientKey, logger)
 
 	clientCertBytes, err := io.ReadAll(clientCert)
 	if err != nil {

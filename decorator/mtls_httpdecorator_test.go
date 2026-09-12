@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -22,10 +23,35 @@ import (
 
 var _ HttpDecorator = (*MtlsHttpDecorator)(nil)
 
-type errorReader struct{}
+type errorReadCloser struct {
+	closed bool
+}
 
-func (e errorReader) Read(_ []byte) (n int, err error) {
+func (e *errorReadCloser) Read(_ []byte) (n int, err error) {
 	return 0, errors.New("read error")
+}
+
+func (e *errorReadCloser) Close() error {
+	e.closed = true
+	return nil
+}
+
+type trackingReadCloser struct {
+	io.Reader
+	closed bool
+}
+
+func newTrackingReadCloser(b []byte) *trackingReadCloser {
+	return &trackingReadCloser{Reader: bytes.NewReader(b)}
+}
+
+func (t *trackingReadCloser) Close() error {
+	t.closed = true
+	return nil
+}
+
+func toReadCloser(b []byte) io.ReadCloser {
+	return io.NopCloser(bytes.NewReader(b))
 }
 
 type mtlsTestContext struct {
@@ -139,9 +165,9 @@ func TestDecorate_Success_MtlsHandshake(t *testing.T) {
 
 	// Decorate client
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
-		bytes.NewReader(ctx.clientPEM),
-		bytes.NewReader(ctx.clientKeyPEM),
+		toReadCloser(ctx.caPEM),
+		toReadCloser(ctx.clientPEM),
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.NoError(t, err)
 	client := &http.Client{}
@@ -182,9 +208,9 @@ func TestDecorate_Success_MtlsHandshake(t *testing.T) {
 func TestDecorate_NilClient(t *testing.T) {
 	ctx := setupMTLS(t)
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
-		bytes.NewReader(ctx.clientPEM),
-		bytes.NewReader(ctx.clientKeyPEM),
+		toReadCloser(ctx.caPEM),
+		toReadCloser(ctx.clientPEM),
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.NoError(t, err)
 	err = d.Decorate(nil, nil)
@@ -194,9 +220,9 @@ func TestDecorate_NilClient(t *testing.T) {
 func TestNewMtlsHttpDecorator_ClientCertReadError(t *testing.T) {
 	ctx := setupMTLS(t)
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
-		errorReader{},
-		bytes.NewReader(ctx.clientKeyPEM),
+		toReadCloser(ctx.caPEM),
+		&errorReadCloser{},
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.Nil(t, d)
 	assert.ErrorContains(t, err, "failed to read client certificate")
@@ -205,9 +231,9 @@ func TestNewMtlsHttpDecorator_ClientCertReadError(t *testing.T) {
 func TestNewMtlsHttpDecorator_ClientKeyReadError(t *testing.T) {
 	ctx := setupMTLS(t)
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
-		bytes.NewReader(ctx.clientPEM),
-		errorReader{},
+		toReadCloser(ctx.caPEM),
+		toReadCloser(ctx.clientPEM),
+		&errorReadCloser{},
 	)
 	assert.Nil(t, d)
 	assert.ErrorContains(t, err, "failed to read client key")
@@ -216,9 +242,9 @@ func TestNewMtlsHttpDecorator_ClientKeyReadError(t *testing.T) {
 func TestNewMtlsHttpDecorator_InvalidClientKeyPair(t *testing.T) {
 	ctx := setupMTLS(t)
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
-		bytes.NewReader([]byte("invalid cert")),
-		bytes.NewReader(ctx.clientKeyPEM),
+		toReadCloser(ctx.caPEM),
+		toReadCloser([]byte("invalid cert")),
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.Nil(t, d)
 	assert.ErrorContains(t, err, "failed to build client x509 key pair")
@@ -227,9 +253,9 @@ func TestNewMtlsHttpDecorator_InvalidClientKeyPair(t *testing.T) {
 func TestNewMtlsHttpDecorator_CACertReadError(t *testing.T) {
 	ctx := setupMTLS(t)
 	d, err := NewMtlsHttpDecorator(
-		errorReader{},
-		bytes.NewReader(ctx.clientPEM),
-		bytes.NewReader(ctx.clientKeyPEM),
+		&errorReadCloser{},
+		toReadCloser(ctx.clientPEM),
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.Nil(t, d)
 	assert.ErrorContains(t, err, "failed to read ca certificate")
@@ -240,9 +266,9 @@ func TestNewMtlsHttpDecorator_InvalidCACertPEM(t *testing.T) {
 
 	t.Run("not pem", func(t *testing.T) {
 		d, err := NewMtlsHttpDecorator(
-			bytes.NewReader([]byte("not a pem certificate")),
-			bytes.NewReader(ctx.clientPEM),
-			bytes.NewReader(ctx.clientKeyPEM),
+			toReadCloser([]byte("not a pem certificate")),
+			toReadCloser(ctx.clientPEM),
+			toReadCloser(ctx.clientKeyPEM),
 		)
 		assert.Nil(t, d)
 		assert.ErrorContains(t, err, "failed to append ca certificate to pool")
@@ -251,9 +277,9 @@ func TestNewMtlsHttpDecorator_InvalidCACertPEM(t *testing.T) {
 	t.Run("wrong pem block type", func(t *testing.T) {
 		wrongBlockPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("some key")})
 		d, err := NewMtlsHttpDecorator(
-			bytes.NewReader(wrongBlockPEM),
-			bytes.NewReader(ctx.clientPEM),
-			bytes.NewReader(ctx.clientKeyPEM),
+			toReadCloser(wrongBlockPEM),
+			toReadCloser(ctx.clientPEM),
+			toReadCloser(ctx.clientKeyPEM),
 		)
 		assert.Nil(t, d)
 		assert.ErrorContains(t, err, "failed to append ca certificate to pool")
@@ -262,9 +288,9 @@ func TestNewMtlsHttpDecorator_InvalidCACertPEM(t *testing.T) {
 	t.Run("invalid der bytes in certificate block", func(t *testing.T) {
 		invalidDERPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("invalid der bytes")})
 		d, err := NewMtlsHttpDecorator(
-			bytes.NewReader(invalidDERPEM),
-			bytes.NewReader(ctx.clientPEM),
-			bytes.NewReader(ctx.clientKeyPEM),
+			toReadCloser(invalidDERPEM),
+			toReadCloser(ctx.clientPEM),
+			toReadCloser(ctx.clientKeyPEM),
 		)
 		assert.Nil(t, d)
 		assert.ErrorContains(t, err, "failed to append ca certificate to pool")
@@ -275,8 +301,8 @@ func TestNewMtlsHttpDecorator_NilCACert(t *testing.T) {
 	ctx := setupMTLS(t)
 	d, err := NewMtlsHttpDecorator(
 		nil,
-		bytes.NewReader(ctx.clientPEM),
-		bytes.NewReader(ctx.clientKeyPEM),
+		toReadCloser(ctx.clientPEM),
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.Nil(t, d)
 	assert.ErrorContains(t, err, "ca certificate reader cannot be nil")
@@ -285,9 +311,9 @@ func TestNewMtlsHttpDecorator_NilCACert(t *testing.T) {
 func TestNewMtlsHttpDecorator_NilClientCert(t *testing.T) {
 	ctx := setupMTLS(t)
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
+		toReadCloser(ctx.caPEM),
 		nil,
-		bytes.NewReader(ctx.clientKeyPEM),
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.Nil(t, d)
 	assert.ErrorContains(t, err, "client certificate reader cannot be nil")
@@ -296,8 +322,8 @@ func TestNewMtlsHttpDecorator_NilClientCert(t *testing.T) {
 func TestNewMtlsHttpDecorator_NilClientKey(t *testing.T) {
 	ctx := setupMTLS(t)
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
-		bytes.NewReader(ctx.clientPEM),
+		toReadCloser(ctx.caPEM),
+		toReadCloser(ctx.clientPEM),
 		nil,
 	)
 	assert.Nil(t, d)
@@ -318,9 +344,9 @@ func TestDecorate_PreservesExistingTransportConfig(t *testing.T) {
 	}
 
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
-		bytes.NewReader(ctx.clientPEM),
-		bytes.NewReader(ctx.clientKeyPEM),
+		toReadCloser(ctx.caPEM),
+		toReadCloser(ctx.clientPEM),
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.NoError(t, err)
 	err = d.Decorate(client, nil)
@@ -343,9 +369,9 @@ func TestDecorate_NilTLSClientConfig(t *testing.T) {
 	}
 
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
-		bytes.NewReader(ctx.clientPEM),
-		bytes.NewReader(ctx.clientKeyPEM),
+		toReadCloser(ctx.caPEM),
+		toReadCloser(ctx.clientPEM),
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.NoError(t, err)
 	err = d.Decorate(client, nil)
@@ -371,9 +397,9 @@ func TestDecorate_UnsupportedTransport(t *testing.T) {
 	}
 
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
-		bytes.NewReader(ctx.clientPEM),
-		bytes.NewReader(ctx.clientKeyPEM),
+		toReadCloser(ctx.caPEM),
+		toReadCloser(ctx.clientPEM),
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.NoError(t, err)
 	err = d.Decorate(client, nil)
@@ -385,9 +411,9 @@ func TestDecorate_RepeatedCalls_NoDuplicateCertificatesOrOverwrittenRootCAs(t *t
 	client := &http.Client{}
 
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
-		bytes.NewReader(ctx.clientPEM),
-		bytes.NewReader(ctx.clientKeyPEM),
+		toReadCloser(ctx.caPEM),
+		toReadCloser(ctx.clientPEM),
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.NoError(t, err)
 
@@ -443,9 +469,9 @@ func TestDecorate_PreservesExistingRootCAs(t *testing.T) {
 	}
 
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
-		bytes.NewReader(ctx.clientPEM),
-		bytes.NewReader(ctx.clientKeyPEM),
+		toReadCloser(ctx.caPEM),
+		toReadCloser(ctx.clientPEM),
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.NoError(t, err)
 
@@ -481,9 +507,9 @@ func TestDecorate_AppendsDifferentCertificate(t *testing.T) {
 	}
 
 	d, err := NewMtlsHttpDecorator(
-		bytes.NewReader(ctx.caPEM),
-		bytes.NewReader(ctx.clientPEM),
-		bytes.NewReader(ctx.clientKeyPEM),
+		toReadCloser(ctx.caPEM),
+		toReadCloser(ctx.clientPEM),
+		toReadCloser(ctx.clientKeyPEM),
 	)
 	assert.NoError(t, err)
 
@@ -504,4 +530,54 @@ func Test_CertificateEquals(t *testing.T) {
 	assert.True(t, certificateEquals(certA, certB))
 	assert.False(t, certificateEquals(certA, certDiffLen))
 	assert.False(t, certificateEquals(certA, certDiffContent))
+}
+
+func TestNewMtlsHttpDecorator_ClosesReaders(t *testing.T) {
+	ctx := setupMTLS(t)
+
+	t.Run("closes all readers on success", func(t *testing.T) {
+		ca := newTrackingReadCloser(ctx.caPEM)
+		clientCert := newTrackingReadCloser(ctx.clientPEM)
+		clientKey := newTrackingReadCloser(ctx.clientKeyPEM)
+
+		d, err := NewMtlsHttpDecorator(ca, clientCert, clientKey)
+		assert.NoError(t, err)
+		assert.NotNil(t, d)
+		assert.True(t, ca.closed, "ca cert reader should be closed")
+		assert.True(t, clientCert.closed, "client cert reader should be closed")
+		assert.True(t, clientKey.closed, "client key reader should be closed")
+	})
+
+	t.Run("closes open readers when client key is nil", func(t *testing.T) {
+		ca := newTrackingReadCloser(ctx.caPEM)
+		clientCert := newTrackingReadCloser(ctx.clientPEM)
+
+		d, err := NewMtlsHttpDecorator(ca, clientCert, nil)
+		assert.Error(t, err)
+		assert.Nil(t, d)
+		assert.True(t, ca.closed, "ca cert reader should be closed")
+		assert.True(t, clientCert.closed, "client cert reader should be closed")
+	})
+
+	t.Run("closes open readers when client cert is nil", func(t *testing.T) {
+		ca := newTrackingReadCloser(ctx.caPEM)
+
+		d, err := NewMtlsHttpDecorator(ca, nil, nil)
+		assert.Error(t, err)
+		assert.Nil(t, d)
+		assert.True(t, ca.closed, "ca cert reader should be closed")
+	})
+
+	t.Run("closes all readers on read/decode errors", func(t *testing.T) {
+		ca := newTrackingReadCloser([]byte("invalid pem"))
+		clientCert := newTrackingReadCloser(ctx.clientPEM)
+		clientKey := newTrackingReadCloser(ctx.clientKeyPEM)
+
+		d, err := NewMtlsHttpDecorator(ca, clientCert, clientKey)
+		assert.Error(t, err)
+		assert.Nil(t, d)
+		assert.True(t, ca.closed, "ca cert reader should be closed")
+		assert.True(t, clientCert.closed, "client cert reader should be closed")
+		assert.True(t, clientKey.closed, "client key reader should be closed")
+	})
 }

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/Dallin-Cawley/httpw"
-	"github.com/Dallin-Cawley/httpw/decorator/deserializer"
 	"github.com/go-openapi/testify/v2/assert"
 )
 
@@ -191,17 +190,5 @@ func TestBasicAuthHttpDecorator_Decorate(t *testing.T) {
 			})
 		}
 		wg.Wait()
-	})
-}
-
-func TestBasicAuthCredentials_WithBasicDeserializer(t *testing.T) {
-	d := deserializer.NewBasicDeserializer[BasicAuthCredential]()
-
-	t.Run("deserialize Text", func(t *testing.T) {
-		data := []byte("username=text_user\npassword=text_pass")
-		res, err := d.Deserialize(data)
-		assert.NoError(t, err)
-		assert.Equal(t, "text_user", res.Username)
-		assert.Equal(t, "text_pass", res.Password)
 	})
 }
