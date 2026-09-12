@@ -17,7 +17,6 @@ import (
 type ClientCredential struct {
 	ClientID     string `json:"client_id" xml:"client_id"`
 	ClientSecret string `json:"client_secret" xml:"client_secret"`
-	tokenURL     string
 	scope        string
 }
 
@@ -26,22 +25,6 @@ func NewClientCredential(clientID, clientSecret string) *ClientCredential {
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 	}
-}
-
-func (c *ClientCredential) UnmarshalText(text []byte) error {
-	for key, val := range parseLines(text) {
-		switch key {
-		case "client_id":
-			c.ClientID = val
-		case "client_secret":
-			c.ClientSecret = val
-		case "token_url":
-			c.tokenURL = val
-		case "scope":
-			c.scope = val
-		}
-	}
-	return nil
 }
 
 // Token represents an OAuth 2.0 token response per RFC 6749 Section 5.1.
@@ -100,7 +83,7 @@ type ClientCredentialsHttpDecorator struct {
 	now            func() time.Time
 }
 
-func NewClientCredentialsHttpDecorator(credentials *ClientCredential, options ...ClientCredentialsHttpDecoratorOption) (*ClientCredentialsHttpDecorator, error) {
+func NewClientCredentialsHttpDecorator(credentials *ClientCredential, tokenURL string, options ...ClientCredentialsHttpDecoratorOption) (*ClientCredentialsHttpDecorator, error) {
 	if credentials == nil {
 		return nil, errors.New("client credentials cannot be nil")
 	}
@@ -111,7 +94,7 @@ func NewClientCredentialsHttpDecorator(credentials *ClientCredential, options ..
 
 	decorator := &ClientCredentialsHttpDecorator{
 		credentials: credentials,
-		tokenURL:    credentials.tokenURL,
+		tokenURL:    tokenURL,
 	}
 
 	for _, option := range options {
