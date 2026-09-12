@@ -24,7 +24,8 @@ type MtlsHttpDecorator struct {
 	caCert  *x509.Certificate
 }
 
-// NewMtlsHttpDecorator creates a new mTLS HTTP decorator. It closes the provided io.ReadCloser.
+// NewMtlsHttpDecorator creates a new mTLS HTTP decorator. It is the responsibility of the caller to close the provided
+// io.ReadCloser(s).
 func NewMtlsHttpDecorator(caCert, clientCert, clientKey io.ReadCloser) (*MtlsHttpDecorator, error) {
 	if caCert == nil {
 		return nil, errors.New("ca certificate reader cannot be nil for mTLS decoration")
