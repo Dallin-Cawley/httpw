@@ -32,8 +32,8 @@ func TestNewClientCredentialsHttpDecorator_Options(t *testing.T) {
 	creds := &ClientCredential{
 		ClientID:     "my_id",
 		ClientSecret: "my_secret",
-		TokenURL:     "https://auth.example.com/token",
-		Scope:        "read write",
+		tokenURL:     "https://auth.example.com/token",
+		scope:        "read write",
 	}
 
 	dec, err := NewClientCredentialsHttpDecorator(
@@ -51,6 +51,13 @@ func TestNewClientCredentialsHttpDecorator_Options(t *testing.T) {
 	assert.Equal(t, tokenDecorator, dec.tokenDecorator)
 }
 
+func TestNewClientCredential(t *testing.T) {
+	cred := NewClientCredential("my_client_id", "my_client_secret")
+	assert.NotNil(t, cred)
+	assert.Equal(t, "my_client_id", cred.ClientID)
+	assert.Equal(t, "my_client_secret", cred.ClientSecret)
+}
+
 func TestClientCredentials_UnmarshalText(t *testing.T) {
 	textData := []byte("# comments are ignored\n\nclient_id = test_client_id\nclient_secret = \"test_client_secret\"\ntoken_url = 'https://text.example.com/token'\nscope=read write\n")
 	var creds ClientCredential
@@ -58,8 +65,8 @@ func TestClientCredentials_UnmarshalText(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "test_client_id", creds.ClientID)
 	assert.Equal(t, "test_client_secret", creds.ClientSecret)
-	assert.Equal(t, "https://text.example.com/token", creds.TokenURL)
-	assert.Equal(t, "read write", creds.Scope)
+	assert.Equal(t, "https://text.example.com/token", creds.tokenURL)
+	assert.Equal(t, "read write", creds.scope)
 
 	// Direct format test matching client_id=theID\nclient_secret=theSecret
 	textData2 := []byte("client_id=theID\nclient_secret=theSecret\n")
@@ -71,7 +78,7 @@ func TestClientCredentials_UnmarshalText(t *testing.T) {
 }
 
 func TestDecorate_NilRequest(t *testing.T) {
-	creds := &ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: "https://example.com/token"}
+	creds := &ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: "https://example.com/token"}
 	dec, err := NewClientCredentialsHttpDecorator(creds)
 	assert.NoError(t, err)
 	err = dec.Decorate(&http.Client{}, nil)
@@ -89,7 +96,7 @@ func TestNewClientCredentialsHttpDecorator_NilCredentials(t *testing.T) {
 func TestNewClientCredentialsHttpDecorator_MissingClientIDOrSecret(t *testing.T) {
 	t.Run("missing client_id", func(t *testing.T) {
 		dec, err := NewClientCredentialsHttpDecorator(
-			&ClientCredential{ClientSecret: "sec", TokenURL: "https://example.com/token"},
+			&ClientCredential{ClientSecret: "sec", tokenURL: "https://example.com/token"},
 		)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "client credentials must contain ClientID and ClientSecret")
@@ -98,7 +105,7 @@ func TestNewClientCredentialsHttpDecorator_MissingClientIDOrSecret(t *testing.T)
 
 	t.Run("missing client_secret", func(t *testing.T) {
 		dec, err := NewClientCredentialsHttpDecorator(
-			&ClientCredential{ClientID: "id", TokenURL: "https://example.com/token"},
+			&ClientCredential{ClientID: "id", tokenURL: "https://example.com/token"},
 		)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "client credentials must contain ClientID and ClientSecret")
@@ -149,8 +156,8 @@ func TestDecorate_SuccessfulFlow_And_Reuse(t *testing.T) {
 	creds := &ClientCredential{
 		ClientID:     "my_client_id",
 		ClientSecret: "my_client_secret",
-		TokenURL:     server.URL,
-		Scope:        "read write",
+		tokenURL:     server.URL,
+		scope:        "read write",
 	}
 	dec, err := NewClientCredentialsHttpDecorator(creds)
 	assert.NoError(t, err)
@@ -214,7 +221,7 @@ func TestDecorate_ExpirationAndRefresh(t *testing.T) {
 	}
 
 	dec, err := NewClientCredentialsHttpDecorator(
-		&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: server.URL},
+		&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: server.URL},
 		WithTimeFunc(timeFunc),
 	)
 	assert.NoError(t, err)
@@ -274,7 +281,7 @@ func TestDecorate_RefreshFailure_FallbackToClientCredentials(t *testing.T) {
 
 	currTime := time.Now()
 	dec, err := NewClientCredentialsHttpDecorator(
-		&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: server.URL},
+		&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: server.URL},
 		WithTimeFunc(func() time.Time { return currTime }),
 	)
 	assert.NoError(t, err)
@@ -305,7 +312,7 @@ func TestDecorate_NoExpiresIn_CachedIndefinitely(t *testing.T) {
 	defer server.Close()
 
 	dec, err := NewClientCredentialsHttpDecorator(
-		&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: server.URL},
+		&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: server.URL},
 	)
 	assert.NoError(t, err)
 
@@ -331,7 +338,7 @@ func TestDecorate_DefaultTokenTypeBearer(t *testing.T) {
 	defer server.Close()
 
 	dec, err := NewClientCredentialsHttpDecorator(
-		&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: server.URL},
+		&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: server.URL},
 	)
 	assert.NoError(t, err)
 
@@ -359,7 +366,7 @@ func TestDecorate_TokenResponseBodyReadError(t *testing.T) {
 	}
 
 	dec, err := NewClientCredentialsHttpDecorator(
-		&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: "https://example.com/token"},
+		&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: "https://example.com/token"},
 		WithHTTPClient(customClient),
 	)
 	assert.NoError(t, err)
@@ -375,7 +382,7 @@ func TestDecorate_TokenResponseBodyReadError(t *testing.T) {
 func TestDecorate_TokenRequestErrors(t *testing.T) {
 	t.Run("invalid token url", func(t *testing.T) {
 		dec, err := NewClientCredentialsHttpDecorator(
-			&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: "http://127.0.0.1:0/invalid"},
+			&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: "http://127.0.0.1:0/invalid"},
 		)
 		assert.NoError(t, err)
 		req, err := http.NewRequest(http.MethodGet, "https://api.example.com", nil)
@@ -394,7 +401,7 @@ func TestDecorate_TokenRequestErrors(t *testing.T) {
 		defer server.Close()
 
 		dec, err := NewClientCredentialsHttpDecorator(
-			&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: server.URL},
+			&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: server.URL},
 		)
 		assert.NoError(t, err)
 		req, err := http.NewRequest(http.MethodGet, "https://api.example.com", nil)
@@ -412,7 +419,7 @@ func TestDecorate_TokenRequestErrors(t *testing.T) {
 		defer server.Close()
 
 		dec, err := NewClientCredentialsHttpDecorator(
-			&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: server.URL},
+			&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: server.URL},
 		)
 		assert.NoError(t, err)
 		req, err := http.NewRequest(http.MethodGet, "https://api.example.com", nil)
@@ -430,7 +437,7 @@ func TestDecorate_TokenRequestErrors(t *testing.T) {
 		defer server.Close()
 
 		dec, err := NewClientCredentialsHttpDecorator(
-			&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: server.URL},
+			&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: server.URL},
 		)
 		assert.NoError(t, err)
 		req, err := http.NewRequest(http.MethodGet, "https://api.example.com", nil)
@@ -443,7 +450,7 @@ func TestDecorate_TokenRequestErrors(t *testing.T) {
 
 	t.Run("token url invalid scheme request error", func(t *testing.T) {
 		dec, err := NewClientCredentialsHttpDecorator(
-			&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: "://invalid-url"},
+			&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: "://invalid-url"},
 		)
 		assert.NoError(t, err)
 		req, err := http.NewRequest(http.MethodGet, "https://api.example.com", nil)
@@ -465,7 +472,7 @@ func TestDecorate_ConcurrentSafety(t *testing.T) {
 	defer server.Close()
 
 	dec, err := NewClientCredentialsHttpDecorator(
-		&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: server.URL},
+		&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: server.URL},
 	)
 	assert.NoError(t, err)
 
@@ -520,7 +527,7 @@ func TestDecorate_WithTokenDecorator_Success(t *testing.T) {
 	creds := &ClientCredential{
 		ClientID:     "my_id",
 		ClientSecret: "my_secret",
-		TokenURL:     server.URL,
+		tokenURL:     server.URL,
 	}
 
 	dec, err := NewClientCredentialsHttpDecorator(
@@ -552,7 +559,7 @@ func TestDecorate_WithTokenDecorator_Error(t *testing.T) {
 	creds := &ClientCredential{
 		ClientID:     "my_id",
 		ClientSecret: "my_secret",
-		TokenURL:     "https://auth.example.com/token",
+		tokenURL:     "https://auth.example.com/token",
 	}
 
 	dec, err := NewClientCredentialsHttpDecorator(
@@ -608,7 +615,7 @@ func TestDecorate_WithTokenDecorator_RefreshToken(t *testing.T) {
 
 	currentTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	dec, err := NewClientCredentialsHttpDecorator(
-		&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: server.URL},
+		&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: server.URL},
 		WithTokenDecorator(tokenDec),
 		WithTimeFunc(func() time.Time { return currentTime }),
 	)
@@ -639,7 +646,7 @@ func TestClientCredentials_IsTokenValid_Thresholds(t *testing.T) {
 	creds := &ClientCredential{
 		ClientID:     "my_id",
 		ClientSecret: "my_secret",
-		TokenURL:     "https://auth.example.com/token",
+		tokenURL:     "https://auth.example.com/token",
 	}
 
 	dec, err := NewClientCredentialsHttpDecorator(creds, WithTimeFunc(fixedNowFunc))
@@ -710,7 +717,7 @@ func TestDecorate_TenMinuteValidityThresholdFlow(t *testing.T) {
 	}
 
 	dec, err := NewClientCredentialsHttpDecorator(
-		&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: server.URL},
+		&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: server.URL},
 		WithTimeFunc(timeFunc),
 	)
 	assert.NoError(t, err)
@@ -748,7 +755,7 @@ func TestClientCredentials_ConcurrentReadsAndDecorate(t *testing.T) {
 	defer server.Close()
 
 	dec, err := NewClientCredentialsHttpDecorator(
-		&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: server.URL},
+		&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: server.URL},
 	)
 	assert.NoError(t, err)
 
@@ -792,7 +799,7 @@ func TestDecorate_CustomTokenType(t *testing.T) {
 	defer server.Close()
 
 	dec, err := NewClientCredentialsHttpDecorator(
-		&ClientCredential{ClientID: "id", ClientSecret: "sec", TokenURL: server.URL},
+		&ClientCredential{ClientID: "id", ClientSecret: "sec", tokenURL: server.URL},
 	)
 	assert.NoError(t, err)
 

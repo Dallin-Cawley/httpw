@@ -17,8 +17,15 @@ import (
 type ClientCredential struct {
 	ClientID     string `json:"client_id" xml:"client_id"`
 	ClientSecret string `json:"client_secret" xml:"client_secret"`
-	TokenURL     string `json:"token_url,omitempty" xml:"token_url,omitempty"`
-	Scope        string `json:"scope,omitempty" xml:"scope,omitempty"`
+	tokenURL     string
+	scope        string
+}
+
+func NewClientCredential(clientID, clientSecret string) *ClientCredential {
+	return &ClientCredential{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+	}
 }
 
 func (c *ClientCredential) UnmarshalText(text []byte) error {
@@ -29,9 +36,9 @@ func (c *ClientCredential) UnmarshalText(text []byte) error {
 		case "client_secret":
 			c.ClientSecret = val
 		case "token_url":
-			c.TokenURL = val
+			c.tokenURL = val
 		case "scope":
-			c.Scope = val
+			c.scope = val
 		}
 	}
 	return nil
@@ -104,7 +111,7 @@ func NewClientCredentialsHttpDecorator(credentials *ClientCredential, options ..
 
 	decorator := &ClientCredentialsHttpDecorator{
 		credentials: credentials,
-		tokenURL:    credentials.TokenURL,
+		tokenURL:    credentials.tokenURL,
 	}
 
 	for _, option := range options {
@@ -232,8 +239,8 @@ func (decorator *ClientCredentialsHttpDecorator) requestToken(client *http.Clien
 	}
 
 	scope := strings.Join(decorator.scopes, " ")
-	if scope == "" && decorator.credentials.Scope != "" {
-		scope = decorator.credentials.Scope
+	if scope == "" && decorator.credentials.scope != "" {
+		scope = decorator.credentials.scope
 	}
 
 	if scope != "" {
