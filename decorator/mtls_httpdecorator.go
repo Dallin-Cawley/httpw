@@ -24,21 +24,19 @@ type MtlsHttpDecorator struct {
 	caCert  *x509.Certificate
 }
 
-func NewMtlsHttpDecorator(logger *slog.Logger, caCert, clientCert, clientKey io.ReadCloser) (*MtlsHttpDecorator, error) {
+// NewMtlsHttpDecorator creates a new mTLS HTTP decorator. It closes the provided io.ReadCloser.
+func NewMtlsHttpDecorator(caCert, clientCert, clientKey io.ReadCloser) (*MtlsHttpDecorator, error) {
 	if caCert == nil {
 		return nil, errors.New("ca certificate reader cannot be nil for mTLS decoration")
 	}
-	defer CloseReadCloser(caCert, logger)
 
 	if clientCert == nil {
 		return nil, errors.New("client certificate reader cannot be nil for mTLS decoration")
 	}
-	defer CloseReadCloser(clientCert, logger)
 
 	if clientKey == nil {
 		return nil, errors.New("client key reader cannot be nil for mTLS decoration")
 	}
-	defer CloseReadCloser(clientKey, logger)
 
 	clientCertBytes, err := io.ReadAll(clientCert)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -25,6 +26,7 @@ var _ HttpDecorator = (*MtlsHttpDecorator)(nil)
 
 type errorReadCloser struct {
 	closed bool
+	err    error
 }
 
 func (e *errorReadCloser) Read(_ []byte) (n int, err error) {
@@ -33,6 +35,9 @@ func (e *errorReadCloser) Read(_ []byte) (n int, err error) {
 
 func (e *errorReadCloser) Close() error {
 	e.closed = true
+	if e.err != nil {
+		return e.err
+	}
 	return nil
 }
 
@@ -532,10 +537,10 @@ func Test_CertificateEquals(t *testing.T) {
 	assert.False(t, certificateEquals(certA, certDiffContent))
 }
 
-func TestNewMtlsHttpDecorator_ClosesReaders(t *testing.T) {
+func TestNewMtlsHttpDecorator_DoesNotCloseReaders(t *testing.T) {
 	ctx := setupMTLS(t)
 
-	t.Run("closes all readers on success", func(t *testing.T) {
+	t.Run("does not close readers on success", func(t *testing.T) {
 		ca := newTrackingReadCloser(ctx.caPEM)
 		clientCert := newTrackingReadCloser(ctx.clientPEM)
 		clientKey := newTrackingReadCloser(ctx.clientKeyPEM)
@@ -543,32 +548,32 @@ func TestNewMtlsHttpDecorator_ClosesReaders(t *testing.T) {
 		d, err := NewMtlsHttpDecorator(ca, clientCert, clientKey)
 		assert.NoError(t, err)
 		assert.NotNil(t, d)
-		assert.True(t, ca.closed, "ca cert reader should be closed")
-		assert.True(t, clientCert.closed, "client cert reader should be closed")
-		assert.True(t, clientKey.closed, "client key reader should be closed")
+		assert.False(t, ca.closed, "ca cert reader should not be closed")
+		assert.False(t, clientCert.closed, "client cert reader should not be closed")
+		assert.False(t, clientKey.closed, "client key reader should not be closed")
 	})
 
-	t.Run("closes open readers when client key is nil", func(t *testing.T) {
+	t.Run("does not close readers when client key is nil", func(t *testing.T) {
 		ca := newTrackingReadCloser(ctx.caPEM)
 		clientCert := newTrackingReadCloser(ctx.clientPEM)
 
 		d, err := NewMtlsHttpDecorator(ca, clientCert, nil)
 		assert.Error(t, err)
 		assert.Nil(t, d)
-		assert.True(t, ca.closed, "ca cert reader should be closed")
-		assert.True(t, clientCert.closed, "client cert reader should be closed")
+		assert.False(t, ca.closed, "ca cert reader should not be closed")
+		assert.False(t, clientCert.closed, "client cert reader should not be closed")
 	})
 
-	t.Run("closes open readers when client cert is nil", func(t *testing.T) {
+	t.Run("does not close readers when client cert is nil", func(t *testing.T) {
 		ca := newTrackingReadCloser(ctx.caPEM)
 
 		d, err := NewMtlsHttpDecorator(ca, nil, nil)
 		assert.Error(t, err)
 		assert.Nil(t, d)
-		assert.True(t, ca.closed, "ca cert reader should be closed")
+		assert.False(t, ca.closed, "ca cert reader should not be closed")
 	})
 
-	t.Run("closes all readers on read/decode errors", func(t *testing.T) {
+	t.Run("does not close readers on read/decode errors", func(t *testing.T) {
 		ca := newTrackingReadCloser([]byte("invalid pem"))
 		clientCert := newTrackingReadCloser(ctx.clientPEM)
 		clientKey := newTrackingReadCloser(ctx.clientKeyPEM)
@@ -576,8 +581,28 @@ func TestNewMtlsHttpDecorator_ClosesReaders(t *testing.T) {
 		d, err := NewMtlsHttpDecorator(ca, clientCert, clientKey)
 		assert.Error(t, err)
 		assert.Nil(t, d)
-		assert.True(t, ca.closed, "ca cert reader should be closed")
-		assert.True(t, clientCert.closed, "client cert reader should be closed")
-		assert.True(t, clientKey.closed, "client key reader should be closed")
+		assert.False(t, ca.closed, "ca cert reader should not be closed")
+		assert.False(t, clientCert.closed, "client cert reader should not be closed")
+		assert.False(t, clientKey.closed, "client key reader should not be closed")
 	})
+}
+
+func TestCloseReadCloser_Success(t *testing.T) {
+	rc := newTrackingReadCloser([]byte("test"))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	CloseReadCloser(rc, logger)
+	assert.True(t, rc.closed)
+}
+
+func TestCloseReadCloser_Error(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	closeErr := errors.New("close failure")
+	rc := &errorReadCloser{err: closeErr}
+
+	CloseReadCloser(rc, logger)
+	assert.True(t, rc.closed)
+	assert.Contains(t, buf.String(), "failed to close read closer")
+	assert.Contains(t, buf.String(), closeErr.Error())
 }
