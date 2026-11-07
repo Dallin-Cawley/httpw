@@ -29,8 +29,13 @@ type IgnoreBody struct{}
 
 // Do sends request with client and decodes the JSON response body into T, or skips decoding when T is IgnoreBody. A
 // response with status code 400 or above returns a *ResponseError wrapping a *NotFoundError for 404 and a status error
-// otherwise. Requests and responses are logged without their bodies.
-func Do[T any](request *http.Request, client *http.Client, logger *slog.Logger) (T, error) {
+// otherwise. Requests and responses are logged without their bodies. WithRetry retries failed attempts.
+func Do[T any](request *http.Request, client *http.Client, logger *slog.Logger, opts ...Option) (T, error) {
+	doOptions := options{sleep: sleepContext}
+	for _, opt := range opts {
+		opt(&doOptions)
+	}
+
 	requestLogger := logger.
 		WithGroup("request").
 		With(
@@ -45,7 +50,7 @@ func Do[T any](request *http.Request, client *http.Client, logger *slog.Logger) 
 		"Executing HTTP request",
 	)
 
-	response, err := client.Do(request)
+	response, err := send(request, client, requestLogger, doOptions)
 	if err != nil {
 		newError := fmt.Errorf("failed to execute http request: %w", err)
 		requestLogger.LogAttrs(request.Context(),
