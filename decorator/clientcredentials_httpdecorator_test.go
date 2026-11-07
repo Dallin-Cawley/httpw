@@ -176,7 +176,8 @@ func TestDecorate_ExpirationAndRefresh(t *testing.T) {
 		assert.NoError(t, err)
 
 		grantType := r.Form.Get("grant_type")
-		if grantType == "client_credentials" {
+		switch grantType {
+		case "client_credentials":
 			tokenRequestCount++
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
@@ -185,7 +186,7 @@ func TestDecorate_ExpirationAndRefresh(t *testing.T) {
 				"expires_in":3600,
 				"refresh_token":"refresh_token_1"
 			}`))
-		} else if grantType == "refresh_token" {
+		case "refresh_token":
 			refreshRequestCount++
 			assert.Equal(t, "refresh_token_1", r.Form.Get("refresh_token"))
 			w.Header().Set("Content-Type", "application/json")
@@ -587,7 +588,8 @@ func TestDecorate_WithTokenDecorator_RefreshToken(t *testing.T) {
 		grantType := r.Form.Get("grant_type")
 		decoratedGrants = append(decoratedGrants, grantType)
 
-		if grantType == "client_credentials" {
+		switch grantType {
+		case "client_credentials":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
 				"access_token":"initial_token",
@@ -595,7 +597,7 @@ func TestDecorate_WithTokenDecorator_RefreshToken(t *testing.T) {
 				"expires_in":10,
 				"refresh_token":"ref_123"
 			}`))
-		} else if grantType == "refresh_token" {
+		case "refresh_token":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
 				"access_token":"refreshed_token",

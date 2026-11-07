@@ -102,6 +102,7 @@ func TestDo_ClientError(t *testing.T) {
 func TestDo_StatusError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"errors":["bad input"]}`))
 	}))
 	defer server.Close()
 
@@ -112,6 +113,17 @@ func TestDo_StatusError(t *testing.T) {
 
 	_, err := Do[map[string]any](req, server.Client(), logger)
 	assert.ErrorContains(t, err, "http request failed with status code 400")
+
+	responseErr, ok := errors.AsType[*ResponseError](err)
+	assert.True(t, ok)
+	assert.Equal(t, http.StatusBadRequest, responseErr.StatusCode())
+	assert.Equal(t, `{"errors":["bad input"]}`, string(responseErr.Body()))
+	assert.False(t, errors.Is(err, &NotFoundError{}))
+
+	// The response body can still be read after Do closed the original.
+	body, readErr := io.ReadAll(responseErr.Response.Body)
+	assert.NoError(t, readErr)
+	assert.Equal(t, `{"errors":["bad input"]}`, string(body))
 
 	output := buf.String()
 	assert.Contains(t, output, "http request encountered an unexpected status code")
@@ -142,6 +154,10 @@ func TestDo_NotFound(t *testing.T) {
 	assert.Equal(t, reqPath, notFoundError.Source)
 	assert.Equal(t, "[ path ] not found", err.Error())
 
+	responseErr, ok := errors.AsType[*ResponseError](err)
+	assert.True(t, ok)
+	assert.Equal(t, http.StatusNotFound, responseErr.StatusCode())
+
 	output := buf.String()
 	assert.Contains(t, output, "http request encountered an unexpected status code")
 	assert.Contains(t, output, "GET")
@@ -168,4 +184,24 @@ func TestDo_DecodeError(t *testing.T) {
 	assert.Contains(t, output, "failed to decode response body")
 	assert.Contains(t, output, "GET")
 	assert.Contains(t, output, server.URL)
+}
+
+func TestDo_NeverLogsBodies(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		_ = json.NewEncoder(w).Encode(map[string]string{"client_token": "response-secret"})
+	}))
+	defer server.Close()
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	req, _ := NewJsonRequest(context.Background(), http.MethodPost, server.URL, map[string]string{"password": "request-secret"})
+	result, err := Do[map[string]string](req, server.Client(), logger)
+	assert.NoError(t, err)
+	assert.Equal(t, "response-secret", result["client_token"])
+
+	assert.Contains(t, buf.String(), "Decoded HTTP response")
+	assert.NotContains(t, buf.String(), "request-secret")
+	assert.NotContains(t, buf.String(), "response-secret")
 }

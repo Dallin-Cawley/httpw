@@ -27,6 +27,9 @@ func NewJsonRequest(ctx context.Context, method string, url string, body any) (*
 // ignored. No unmarshaling will be attempted.
 type IgnoreBody struct{}
 
+// Do sends request with client and decodes the JSON response body into T, or skips decoding when T is IgnoreBody. A
+// response with status code 400 or above returns a *ResponseError wrapping a *NotFoundError for 404 and a status error
+// otherwise. Requests and responses are logged without their bodies.
 func Do[T any](request *http.Request, client *http.Client, logger *slog.Logger) (T, error) {
 	requestLogger := logger.
 		WithGroup("request").
@@ -35,11 +38,11 @@ func Do[T any](request *http.Request, client *http.Client, logger *slog.Logger) 
 			slog.String("url", request.URL.String()),
 		)
 
+	// Bodies are never logged: they may hold credentials and tokens.
 	requestLogger.LogAttrs(
 		request.Context(),
 		slog.LevelDebug,
 		"Executing HTTP request",
-		slog.Any("body", request.Body),
 	)
 
 	response, err := client.Do(request)
@@ -69,10 +72,10 @@ func Do[T any](request *http.Request, client *http.Client, logger *slog.Logger) 
 		)
 
 		if response.StatusCode == http.StatusNotFound {
-			return *new(T), NewNotFoundError(path.Base(request.URL.Path), request.URL.Path)
+			return *new(T), NewResponseError(response, NewNotFoundError(path.Base(request.URL.Path), request.URL.Path))
 		}
 
-		return *new(T), fmt.Errorf("http request failed with status code %d", response.StatusCode)
+		return *new(T), NewResponseError(response, fmt.Errorf("http request failed with status code %d", response.StatusCode))
 	}
 
 	typeOf := reflect.TypeOf(*new(T))
@@ -101,7 +104,6 @@ func Do[T any](request *http.Request, client *http.Client, logger *slog.Logger) 
 		request.Context(),
 		slog.LevelDebug,
 		"Decoded HTTP response",
-		slog.Any("body", responseBody),
 	)
 
 	return responseBody, nil
